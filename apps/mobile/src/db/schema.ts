@@ -1,6 +1,17 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import { type BaseSQLiteDatabase, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
+import type { MobileAgentMessage, MobileImageAttachment } from '../types/message'
+
+export const appCheckpointTable = sqliteTable('app_checkpoint', {
+  id: text('id').primaryKey(),
+  activeTopicId: text('active_topic_id').notNull(),
+  attachments: text('attachments', { mode: 'json' }).$type<MobileImageAttachment[]>().notNull(),
+  prompt: text('prompt').notNull(),
+  screen: text('screen').$type<'chat' | 'settings'>().notNull(),
+  updatedAt: integer('updated_at').notNull()
+})
+
 export const assistantTable = sqliteTable(
   'assistant',
   {
@@ -54,7 +65,7 @@ export const messageTable = sqliteTable(
       .notNull()
       .references(() => topicTable.id, { onDelete: 'cascade' }),
     role: text('role').$type<AgentMessage['role']>().notNull(),
-    data: text('data', { mode: 'json' }).$type<AgentMessage>().notNull(),
+    data: text('data', { mode: 'json' }).$type<MobileAgentMessage>().notNull(),
     status: text('status').$type<'success' | 'error'>().notNull(),
     sequence: integer('sequence').notNull(),
     modelId: text('model_id'),
@@ -85,6 +96,7 @@ export const providerTable = sqliteTable(
 )
 
 export const schema = {
+  appCheckpointTable,
   assistantTable,
   messageTable,
   providerTable,

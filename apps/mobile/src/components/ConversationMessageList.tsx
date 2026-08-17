@@ -1,10 +1,14 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
+import type { ReactElement } from 'react'
+import { ActivityIndicator, FlatList, Image, StyleSheet, Text, View } from 'react-native'
 import Markdown from 'react-native-markdown-display'
 
 import i18n from '../i18n'
+import { getMessageAttachments } from '../types/message'
 
 interface ConversationMessageListProps {
+  footer?: ReactElement
+  header?: ReactElement
   messages: AgentMessage[]
   streamingText?: string
 }
@@ -85,6 +89,8 @@ function MarkdownContent({ text, user = false }: { text: string; user?: boolean 
 }
 
 function MessageContent({ message }: { message: AgentMessage }) {
+  const attachments = getMessageAttachments(message)
+
   if (message.role === 'toolResult') {
     return <ToolCard isError={message.isError} name={message.toolName} result={summarize(getToolResultText(message))} />
   }
@@ -94,58 +100,84 @@ function MessageContent({ message }: { message: AgentMessage }) {
   if (message.role === 'branchSummary' || message.role === 'compactionSummary') {
     return <MarkdownContent text={message.summary} />
   }
-  if (typeof message.content === 'string') {
-    return <MarkdownContent text={message.content} user={message.role === 'user'} />
-  }
-
   return (
     <View style={styles.contentParts}>
-      {message.content.map((part, index) => {
-        if (part.type === 'text') {
-          return <MarkdownContent key={`${part.type}-${index}`} text={part.text} user={message.role === 'user'} />
-        }
-        if (part.type === 'toolCall') {
-          return <ToolCard key={`${part.id}-${index}`} name={part.name} parameters={part.arguments} />
-        }
-        if (part.type === 'image') {
-          return (
-            <Text key={`${part.type}-${index}`} style={[styles.content, message.role === 'user' && styles.userText]}>
-              {i18n.t('imageContent')}
-            </Text>
-          )
-        }
-        return null
-      })}
+      {typeof message.content === 'string' ? (
+        <MarkdownContent text={message.content} user={message.role === 'user'} />
+      ) : (
+        message.content.map((part, index) => {
+          if (part.type === 'text') {
+            return <MarkdownContent key={`${part.type}-${index}`} text={part.text} user={message.role === 'user'} />
+          }
+          if (part.type === 'toolCall') {
+            return <ToolCard key={`${part.id}-${index}`} name={part.name} parameters={part.arguments} />
+          }
+          if (part.type === 'image') {
+            return (
+              <Text key={`${part.type}-${index}`} style={[styles.content, message.role === 'user' && styles.userText]}>
+                {i18n.t('imageContent')}
+              </Text>
+            )
+          }
+          return null
+        })
+      )}
+      {attachments.length > 0 ? (
+        <View style={styles.attachments}>
+          {attachments.map((attachment) => (
+            <Image
+              accessibilityLabel={attachment.fileName}
+              key={attachment.id}
+              resizeMode="cover"
+              source={{ uri: attachment.uri }}
+              style={styles.attachment}
+            />
+          ))}
+        </View>
+      ) : null}
     </View>
   )
 }
 
-export function ConversationMessageList({ messages, streamingText = '' }: ConversationMessageListProps) {
-  if (messages.length === 0 && !streamingText) return <Text style={styles.empty}>{i18n.t('noMessages')}</Text>
-
+export function ConversationMessageList({
+  footer,
+  header,
+  messages,
+  streamingText = ''
+}: ConversationMessageListProps) {
   return (
-    <View style={styles.list}>
-      {messages.map((message, index) => {
+    <FlatList
+      contentContainerStyle={styles.list}
+      data={messages}
+      keyboardShouldPersistTaps="handled"
+      keyExtractor={(message, index) => `${message.timestamp}-${message.role}-${index}`}
+      ListEmptyComponent={!streamingText ? <Text style={styles.empty}>{i18n.t('noMessages')}</Text> : null}
+      ListFooterComponent={
+        <View style={styles.boundarySection}>
+          {streamingText ? (
+            <View style={[styles.message, styles.streaming]}>
+              <View style={styles.streamingHeader}>
+                <ActivityIndicator color="#175cd3" size="small" />
+                <Text style={styles.streamingRole}>{i18n.t('streamingAnswer')}</Text>
+              </View>
+              <MarkdownContent text={streamingText} />
+            </View>
+          ) : null}
+          {footer}
+        </View>
+      }
+      ListHeaderComponent={header ? <View style={styles.boundarySection}>{header}</View> : null}
+      renderItem={({ item: message }) => {
         const userMessage = message.role === 'user'
         return (
-          <View
-            key={`${message.timestamp}-${message.role}-${index}`}
-            style={[styles.message, userMessage && styles.user]}>
+          <View style={[styles.message, userMessage && styles.user]}>
             <Text style={[styles.role, userMessage && styles.userText]}>{getRoleLabel(message)}</Text>
             <MessageContent message={message} />
           </View>
         )
-      })}
-      {streamingText ? (
-        <View style={[styles.message, styles.streaming]}>
-          <View style={styles.streamingHeader}>
-            <ActivityIndicator color="#175cd3" size="small" />
-            <Text style={styles.streamingRole}>{i18n.t('streamingAnswer')}</Text>
-          </View>
-          <MarkdownContent text={streamingText} />
-        </View>
-      ) : null}
-    </View>
+      }}
+      style={styles.flatList}
+    />
   )
 }
 
@@ -175,10 +207,14 @@ const userMarkdownStyles = StyleSheet.create({
 })
 
 const styles = StyleSheet.create({
+  attachment: { borderRadius: 8, height: 160, width: 200 },
+  attachments: { gap: 8 },
+  boundarySection: { gap: 16 },
   content: { color: '#344054', lineHeight: 21 },
   contentParts: { gap: 8 },
   empty: { color: '#667085', lineHeight: 20 },
-  list: { gap: 10 },
+  flatList: { flex: 1 },
+  list: { gap: 10, padding: 20, paddingBottom: 48, paddingTop: 64 },
   message: {
     alignSelf: 'flex-start',
     backgroundColor: '#f2f4f7',

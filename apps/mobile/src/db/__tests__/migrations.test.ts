@@ -12,14 +12,14 @@ describe('mobile database migrations', () => {
   it('applies the complete ordered migration array to a fresh database', async () => {
     testDatabase = await createTestDatabase({ setItemAsync: vi.fn() })
 
-    expect(migrations.map(({ version }) => version)).toEqual([1, 2])
-    expect(testDatabase.sqlite.pragma('user_version', { simple: true })).toBe(2)
+    expect(migrations.map(({ version }) => version)).toEqual([1, 2, 3])
+    expect(testDatabase.sqlite.pragma('user_version', { simple: true })).toBe(3)
     expect(
       testDatabase.sqlite
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all()
         .map((row) => (row as { name: string }).name)
-    ).toEqual(['assistant', 'message', 'provider', 'topic'])
+    ).toEqual(['app_checkpoint', 'assistant', 'message', 'provider', 'topic'])
   })
 
   it('moves a version 1 provider key to secure storage before removing the plaintext column', async () => {
@@ -63,7 +63,7 @@ describe('mobile database migrations', () => {
     expect(storedSecrets.get(provider.apiKeyRef)).toBe('secret-key')
     expect(columns.map(({ name }) => name)).toContain('api_key_ref')
     expect(columns.map(({ name }) => name)).not.toContain('api_key')
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(2)
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(3)
 
     sqlite.close()
   })

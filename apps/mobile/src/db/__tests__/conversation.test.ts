@@ -1,15 +1,24 @@
-import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { MobileAgentMessage } from '../../types/message'
 import { loadConversationMessages, saveConversationMessages } from '../conversation'
 import { assistantTable, messageTable, topicTable } from '../schema'
 import { deleteTopic } from '../topic'
 import { createTestDatabase, type TestDatabase } from './testDatabase'
 
-const messages: AgentMessage[] = [
+const messages: MobileAgentMessage[] = [
   {
     role: 'user',
     content: [{ type: 'text', text: '请用 **Markdown** 回复。' }],
+    attachments: [
+      {
+        fileName: 'photo.jpg',
+        id: 'attachment-1',
+        kind: 'image',
+        mimeType: 'image/jpeg',
+        uri: 'file:///local/photo.jpg'
+      }
+    ],
     timestamp: 1_700_000_000_000
   },
   {

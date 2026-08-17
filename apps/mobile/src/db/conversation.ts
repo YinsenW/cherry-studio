@@ -1,13 +1,13 @@
-import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import { asc, eq } from 'drizzle-orm'
 
+import type { MobileAgentMessage } from '../types/message'
 import { messageTable, type MobileDatabase, topicTable } from './schema'
 
-function getMessageStatus(message: AgentMessage): 'success' | 'error' {
+function getMessageStatus(message: MobileAgentMessage): 'success' | 'error' {
   return message.role === 'assistant' && message.stopReason === 'error' ? 'error' : 'success'
 }
 
-function getTopicName(messages: AgentMessage[]): string {
+function getTopicName(messages: MobileAgentMessage[]): string {
   const firstUserMessage = messages.find((message) => message.role === 'user')
   if (!firstUserMessage) return ''
 
@@ -22,7 +22,7 @@ function getTopicName(messages: AgentMessage[]): string {
   return text.trim().replace(/\s+/g, ' ').slice(0, 36)
 }
 
-export function loadConversationMessages(topicId: string, database: MobileDatabase): AgentMessage[] {
+export function loadConversationMessages(topicId: string, database: MobileDatabase): MobileAgentMessage[] {
   return database
     .select({ data: messageTable.data })
     .from(messageTable)
@@ -32,7 +32,11 @@ export function loadConversationMessages(topicId: string, database: MobileDataba
     .map((row) => row.data)
 }
 
-export function saveConversationMessages(messages: AgentMessage[], topicId: string, database: MobileDatabase): void {
+export function saveConversationMessages(
+  messages: MobileAgentMessage[],
+  topicId: string,
+  database: MobileDatabase
+): void {
   const now = Date.now()
 
   database.transaction((transaction) => {

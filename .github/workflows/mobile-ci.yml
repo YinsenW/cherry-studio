@@ -1,0 +1,41 @@
+name: Mobile CI
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - mobile-starter
+  pull_request:
+    branches:
+      - mobile-starter
+
+jobs:
+  mobile-checks:
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.node-version'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck mobile app
+        run: pnpm --filter @cherrystudio/mobile typecheck
+
+      - name: Test mobile app
+        run: pnpm --filter @cherrystudio/mobile test
+
+      - name: Check Expo dependencies
+        run: pnpm dlx expo-doctor@1.20.2 apps/mobile

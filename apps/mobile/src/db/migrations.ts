@@ -112,6 +112,19 @@ export const migrations: Migration[] = [
       'CREATE INDEX provider_enabled_idx ON provider (is_enabled)',
       'CREATE INDEX provider_order_key_idx ON provider (order_key)'
     ]
+  },
+  {
+    version: 3,
+    statements: [
+      `CREATE TABLE app_checkpoint (
+        id TEXT PRIMARY KEY NOT NULL,
+        active_topic_id TEXT NOT NULL,
+        attachments TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        screen TEXT NOT NULL CHECK(screen IN ('chat', 'settings')),
+        updated_at INTEGER NOT NULL
+      )`
+    ]
   }
 ]
 
