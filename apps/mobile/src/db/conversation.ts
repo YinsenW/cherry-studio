@@ -1,14 +1,29 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import { asc, eq } from 'drizzle-orm'
 
-import { DEFAULT_TOPIC_ID, getDatabase } from './database'
+import { getDatabase } from './database'
 import { messageTable, topicTable } from './schema'
 
 function getMessageStatus(message: AgentMessage): 'success' | 'error' {
   return message.role === 'assistant' && message.stopReason === 'error' ? 'error' : 'success'
 }
 
-export function loadConversationMessages(topicId = DEFAULT_TOPIC_ID): AgentMessage[] {
+function getTopicName(messages: AgentMessage[]): string {
+  const firstUserMessage = messages.find((message) => message.role === 'user')
+  if (!firstUserMessage) return ''
+
+  const content = firstUserMessage.content
+  const text =
+    typeof content === 'string'
+      ? content
+      : content
+          .filter((part) => part.type === 'text')
+          .map((part) => part.text)
+          .join(' ')
+  return text.trim().replace(/\s+/g, ' ').slice(0, 36)
+}
+
+export function loadConversationMessages(topicId: string): AgentMessage[] {
   return getDatabase()
     .select({ data: messageTable.data })
     .from(messageTable)
@@ -18,11 +33,12 @@ export function loadConversationMessages(topicId = DEFAULT_TOPIC_ID): AgentMessa
     .map((row) => row.data)
 }
 
-export function saveConversationMessages(messages: AgentMessage[], topicId = DEFAULT_TOPIC_ID): void {
+export function saveConversationMessages(messages: AgentMessage[], topicId: string): void {
   const database = getDatabase()
   const now = Date.now()
 
   database.transaction((transaction) => {
+    const topic = transaction.select({ name: topicTable.name }).from(topicTable).where(eq(topicTable.id, topicId)).get()
     transaction.delete(messageTable).where(eq(messageTable.topicId, topicId)).run()
 
     let parentId: string | null = null
@@ -48,7 +64,12 @@ export function saveConversationMessages(messages: AgentMessage[], topicId = DEF
 
     transaction
       .update(topicTable)
-      .set({ activeNodeId: parentId, lastActivityAt: now, updatedAt: now })
+      .set({
+        activeNodeId: parentId,
+        lastActivityAt: now,
+        name: topic?.name || getTopicName(messages),
+        updatedAt: now
+      })
       .where(eq(topicTable.id, topicId))
       .run()
   })
