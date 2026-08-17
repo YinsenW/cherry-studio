@@ -1,0 +1,28 @@
+{
+  "name": "@cherrystudio/mobile",
+  "version": "0.0.1",
+  "main": "index.ts",
+  "dependencies": {
+    "@cherrystudio/ai-runtime-contracts": "workspace:*",
+    "@earendil-works/pi-agent-core": "0.84.2",
+    "@earendil-works/pi-ai": "0.84.2",
+    "expo": "~57.0.13",
+    "expo-build-properties": "~57.0.11",
+    "expo-dev-client": "~57.0.12",
+    "expo-status-bar": "~57.0.1",
+    "i18next": "23.16.8",
+    "react": "19.2.3",
+    "react-native": "0.86.2"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo start --dev-client --android",
+    "ios": "expo start --dev-client --ios",
+    "typecheck": "tsc --noEmit"
+  },
+  "private": true
+}

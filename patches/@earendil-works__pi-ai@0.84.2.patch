@@ -1,0 +1,62 @@
+diff --git a/dist/api/bedrock-converse-stream.lazy.js b/dist/api/bedrock-converse-stream.lazy.js
+index 5c30b70170ecdce19d17f5bb5384c13558d4af7e..10c059d838da06be63edce13baf6cea7a79b61eb 100644
+--- a/dist/api/bedrock-converse-stream.lazy.js
++++ b/dist/api/bedrock-converse-stream.lazy.js
+@@ -13,10 +13,8 @@ import { lazyApi } from "./lazy.js";
+  * AWS SDK. The `.ts`/`.js` rewrite keeps the trick working from both source
+  * and built output.
+  */
+-const importNodeOnlyApi = (specifier) => {
+-    const runtimeSpecifier = import.meta.url.endsWith(".js") ? specifier.replace(/\.ts$/, ".js") : specifier;
+-    return import(__rewriteRelativeImportExtension(runtimeSpecifier));
+-};
++// Cherry mobile patch: AWS SDK is not available on React Native.
++const importNodeOnlyApi = () => Promise.reject(new Error("AWS SDK is not available on React Native"));
+ let bedrockModuleOverride;
+ /**
+  * Overrides the dynamically imported bedrock implementation. Used by the Bun
+diff --git a/dist/auth/context.js b/dist/auth/context.js
+index 4898f1e314aff822211fb7ea655b2971dc2685ce..3dc6a405ac49a8506e937beddfe9b34e31ccc527 100644
+--- a/dist/auth/context.js
++++ b/dist/auth/context.js
+@@ -7,7 +7,8 @@ var __rewriteRelativeImportExtension = (this && this.__rewriteRelativeImportExte
+     return path;
+ };
+ // Variable specifier so browser bundlers do not try to resolve node builtins.
+-const importNodeModule = (specifier) => import(__rewriteRelativeImportExtension(specifier));
++// Cherry mobile patch: node: modules unavailable on React Native; callers must handle failure.
++const importNodeModule = () => Promise.reject(new Error("node: modules are not available on React Native"));
+ function getProcessEnv() {
+     const proc = globalThis.process;
+     return proc?.env;
+diff --git a/dist/auth/oauth/load.js b/dist/auth/oauth/load.js
+index 782ae1663cf013b4dc07d59bdeb2cbc4f38067a0..1215b106df3f01299888a6f489ebf8fa61db515b 100644
+--- a/dist/auth/oauth/load.js
++++ b/dist/auth/oauth/load.js
+@@ -12,10 +12,8 @@ var __rewriteRelativeImportExtension = (this && this.__rewriteRelativeImportExte
+  * `node:crypto` PKCE). The `.ts`/`.js` rewrite keeps the trick working from
+  * both source and built output.
+  */
+-const importOAuthModule = (specifier) => {
+-    const runtimeSpecifier = import.meta.url.endsWith(".js") ? specifier.replace(/\.ts$/, ".js") : specifier;
+-    return import(__rewriteRelativeImportExtension(runtimeSpecifier));
+-};
++// Cherry mobile patch: OAuth flows (node:http callback servers) are not available on React Native.
++const importOAuthModule = () => Promise.reject(new Error("OAuth flows are not available on React Native"));
+ let bundledLoaders;
+ /** Registers statically bundled OAuth flows for standalone Bun binaries. */
+ export function registerBundledOAuthFlowLoaders(loaders) {
+diff --git a/dist/env-api-keys.js b/dist/env-api-keys.js
+index b9a88dbe3024aa16010e201513c5d458006a8fa9..693a08e46c7511307a38235dd126e1542725cd5f 100644
+--- a/dist/env-api-keys.js
++++ b/dist/env-api-keys.js
+@@ -10,7 +10,8 @@ var __rewriteRelativeImportExtension = (this && this.__rewriteRelativeImportExte
+ let _existsSync = null;
+ let _homedir = null;
+ let _join = null;
+-const dynamicImport = (specifier) => import(__rewriteRelativeImportExtension(specifier));
++// Cherry mobile patch: node: modules unavailable on React Native.
++const dynamicImport = () => Promise.reject(new Error("node: modules are not available on React Native"));
+ const NODE_FS_SPECIFIER = "node:" + "fs";
+ const NODE_OS_SPECIFIER = "node:" + "os";
+ const NODE_PATH_SPECIFIER = "node:" + "path";
