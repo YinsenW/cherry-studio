@@ -3,6 +3,22 @@ export interface Migration {
   version: number
 }
 
+export interface MigrationDatabase {
+  execSync(source: string): void
+  getAllSync<T>(source: string): T[]
+  getFirstSync<T>(source: string): T | null
+  withTransactionSync(task: () => void): void
+}
+
+export interface MigrationSecretStore {
+  setItemAsync(key: string, value: string): Promise<void>
+}
+
+interface LegacyProviderSecret {
+  apiKey: string
+  apiKeyRef: string
+}
+
 export const migrations: Migration[] = [
   {
     version: 1,
@@ -68,5 +84,65 @@ export const migrations: Migration[] = [
       'CREATE INDEX IF NOT EXISTS provider_enabled_idx ON provider (is_enabled)',
       'CREATE INDEX IF NOT EXISTS provider_order_key_idx ON provider (order_key)'
     ]
+  },
+  {
+    version: 2,
+    statements: [
+      `CREATE TABLE provider_secure (
+        provider_id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        base_url TEXT NOT NULL,
+        api_key_ref TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        is_enabled INTEGER DEFAULT 1 NOT NULL,
+        order_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`,
+      `INSERT INTO provider_secure (
+        provider_id, name, base_url, api_key_ref, model_id,
+        is_enabled, order_key, created_at, updated_at
+      )
+      SELECT
+        provider_id, name, base_url, 'provider.' || lower(hex(provider_id)), model_id,
+        is_enabled, order_key, created_at, updated_at
+      FROM provider`,
+      'DROP TABLE provider',
+      'ALTER TABLE provider_secure RENAME TO provider',
+      'CREATE INDEX provider_enabled_idx ON provider (is_enabled)',
+      'CREATE INDEX provider_order_key_idx ON provider (order_key)'
+    ]
   }
 ]
+
+async function migrateLegacyProviderSecrets(database: MigrationDatabase, secretStore: MigrationSecretStore) {
+  const secrets = database.getAllSync<LegacyProviderSecret>(
+    `SELECT api_key AS apiKey, 'provider.' || lower(hex(provider_id)) AS apiKeyRef FROM provider`
+  )
+
+  await Promise.all(
+    secrets
+      .filter(({ apiKey }) => apiKey.length > 0)
+      .map(({ apiKey, apiKeyRef }) => secretStore.setItemAsync(apiKeyRef, apiKey))
+  )
+}
+
+export async function applyMigrations(database: MigrationDatabase, secretStore: MigrationSecretStore): Promise<void> {
+  const row = database.getFirstSync<{ user_version: number }>('PRAGMA user_version')
+  const currentVersion = row?.user_version ?? 0
+  const latestVersion = migrations.at(-1)?.version ?? 0
+
+  if (currentVersion > latestVersion) {
+    throw new Error(`Database version ${currentVersion} is newer than supported version ${latestVersion}`)
+  }
+
+  for (const migration of migrations) {
+    if (migration.version <= currentVersion) continue
+    if (migration.version === 2) await migrateLegacyProviderSecrets(database, secretStore)
+
+    database.withTransactionSync(() => {
+      for (const statement of migration.statements) database.execSync(statement)
+      database.execSync(`PRAGMA user_version = ${migration.version}`)
+    })
+  }
+}

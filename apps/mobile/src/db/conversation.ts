@@ -1,8 +1,7 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import { asc, eq } from 'drizzle-orm'
 
-import { getDatabase } from './database'
-import { messageTable, topicTable } from './schema'
+import { messageTable, type MobileDatabase, topicTable } from './schema'
 
 function getMessageStatus(message: AgentMessage): 'success' | 'error' {
   return message.role === 'assistant' && message.stopReason === 'error' ? 'error' : 'success'
@@ -23,8 +22,8 @@ function getTopicName(messages: AgentMessage[]): string {
   return text.trim().replace(/\s+/g, ' ').slice(0, 36)
 }
 
-export function loadConversationMessages(topicId: string): AgentMessage[] {
-  return getDatabase()
+export function loadConversationMessages(topicId: string, database: MobileDatabase): AgentMessage[] {
+  return database
     .select({ data: messageTable.data })
     .from(messageTable)
     .where(eq(messageTable.topicId, topicId))
@@ -33,8 +32,7 @@ export function loadConversationMessages(topicId: string): AgentMessage[] {
     .map((row) => row.data)
 }
 
-export function saveConversationMessages(messages: AgentMessage[], topicId: string): void {
-  const database = getDatabase()
+export function saveConversationMessages(messages: AgentMessage[], topicId: string, database: MobileDatabase): void {
   const now = Date.now()
 
   database.transaction((transaction) => {

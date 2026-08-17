@@ -10,20 +10,26 @@
     "expo": "~57.0.13",
     "expo-build-properties": "~57.0.11",
     "expo-dev-client": "~57.0.12",
+    "expo-secure-store": "~57.0.1",
     "expo-sqlite": "~57.0.1",
     "expo-status-bar": "~57.0.1",
     "i18next": "23.16.8",
     "react": "19.2.3",
-    "react-native": "0.86.2"
+    "react-native": "0.86.2",
+    "react-native-markdown-display": "^7.0.2"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/react": "~19.2.2",
-    "typescript": "~6.0.3"
+    "better-sqlite3": "12.11.1",
+    "typescript": "~6.0.3",
+    "vitest": "^3.2.7"
   },
   "scripts": {
     "start": "expo start --dev-client",
     "android": "expo start --dev-client --android",
     "ios": "expo start --dev-client --ios",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "private": true

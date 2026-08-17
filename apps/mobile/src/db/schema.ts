@@ -1,5 +1,5 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { type BaseSQLiteDatabase, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 export const assistantTable = sqliteTable(
   'assistant',
@@ -74,7 +74,7 @@ export const providerTable = sqliteTable(
     id: text('provider_id').primaryKey(),
     name: text('name').notNull(),
     baseUrl: text('base_url').notNull(),
-    apiKey: text('api_key').notNull(),
+    apiKeyRef: text('api_key_ref').notNull(),
     modelId: text('model_id').notNull(),
     isEnabled: integer('is_enabled', { mode: 'boolean' }).notNull().default(true),
     orderKey: text('order_key').notNull(),
@@ -92,3 +92,4 @@ export const schema = {
 }
 
 export type ProviderRecord = typeof providerTable.$inferSelect
+export type MobileDatabase = BaseSQLiteDatabase<'sync', unknown, typeof schema>

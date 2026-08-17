@@ -1,37 +1,16 @@
+import type { ExpoSQLiteDatabase } from 'drizzle-orm/expo-sqlite'
 import { drizzle } from 'drizzle-orm/expo-sqlite'
 import { openDatabaseSync } from 'expo-sqlite'
 
-import { migrations } from './migrations'
+import { DEFAULT_ASSISTANT_ID, DEFAULT_TOPIC_ID } from './constants'
+import { applyMigrations } from './migrations'
+import { providerSecretStore } from './providerSecretStore'
 import { assistantTable, schema, topicTable } from './schema'
 
-export const DEFAULT_ASSISTANT_ID = 'default-assistant'
-export const DEFAULT_TOPIC_ID = 'default-topic'
-export const DEFAULT_PROVIDER_ID = 'openai-compatible'
+let database: ExpoSQLiteDatabase<typeof schema> | undefined
+let initialization: Promise<ExpoSQLiteDatabase<typeof schema>> | undefined
 
-const sqlite = openDatabaseSync('cherry-studio-mobile.db')
-const database = drizzle(sqlite, { schema })
-let initialized = false
-
-function applyMigrations() {
-  const row = sqlite.getFirstSync<{ user_version: number }>('PRAGMA user_version')
-  const currentVersion = row?.user_version ?? 0
-  const latestVersion = migrations.at(-1)?.version ?? 0
-
-  if (currentVersion > latestVersion) {
-    throw new Error(`Database version ${currentVersion} is newer than supported version ${latestVersion}`)
-  }
-
-  for (const migration of migrations) {
-    if (migration.version <= currentVersion) continue
-
-    sqlite.withTransactionSync(() => {
-      for (const statement of migration.statements) sqlite.execSync(statement)
-      sqlite.execSync(`PRAGMA user_version = ${migration.version}`)
-    })
-  }
-}
-
-function seedDefaultConversation() {
+function seedDefaultConversation(database: ExpoSQLiteDatabase<typeof schema>) {
   const now = Date.now()
 
   database.transaction((transaction) => {
@@ -68,16 +47,23 @@ function seedDefaultConversation() {
   })
 }
 
-export function initializeDatabase() {
-  if (initialized) return database
+export function initializeDatabase(): Promise<ExpoSQLiteDatabase<typeof schema>> {
+  if (initialization) return initialization
 
-  sqlite.execSync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;')
-  applyMigrations()
-  seedDefaultConversation()
-  initialized = true
-  return database
+  initialization = (async () => {
+    const sqlite = openDatabaseSync('cherry-studio-mobile.db')
+    const initializedDatabase = drizzle(sqlite, { schema })
+    sqlite.execSync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;')
+    await applyMigrations(sqlite, providerSecretStore)
+    seedDefaultConversation(initializedDatabase)
+    database = initializedDatabase
+    return initializedDatabase
+  })()
+
+  return initialization
 }
 
 export function getDatabase() {
-  return initializeDatabase()
+  if (!database) throw new Error('Database has not been initialized')
+  return database
 }

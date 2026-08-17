@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 
-import { getDatabase } from './database'
-import { type ProviderRecord, providerTable } from './schema'
+import type { ProviderSecretStore } from './providerSecretStore'
+import { type MobileDatabase, type ProviderRecord, providerTable } from './schema'
 
 export interface ProviderInput {
   apiKey: string
@@ -11,18 +11,50 @@ export interface ProviderInput {
   name: string
 }
 
-export function getProvider(id: string): ProviderRecord | undefined {
-  return getDatabase().select().from(providerTable).where(eq(providerTable.id, id)).get()
+export interface Provider extends Omit<ProviderRecord, 'apiKeyRef'> {
+  apiKey: string
 }
 
-export function saveProvider(input: ProviderInput): void {
-  const now = Date.now()
+function createApiKeyRef(): string {
+  return `provider.${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 12)}`
+}
 
-  getDatabase()
+export async function getProvider(
+  id: string,
+  database: MobileDatabase,
+  secretStore: ProviderSecretStore
+): Promise<Provider | undefined> {
+  const record = database.select().from(providerTable).where(eq(providerTable.id, id)).get()
+  if (!record) return undefined
+
+  const { apiKeyRef, ...provider } = record
+  return { ...provider, apiKey: (await secretStore.getItemAsync(apiKeyRef)) ?? '' }
+}
+
+export async function saveProvider(
+  input: ProviderInput,
+  database: MobileDatabase,
+  secretStore: ProviderSecretStore
+): Promise<void> {
+  const now = Date.now()
+  const existing = database
+    .select({ apiKeyRef: providerTable.apiKeyRef })
+    .from(providerTable)
+    .where(eq(providerTable.id, input.id))
+    .get()
+  const apiKeyRef = existing?.apiKeyRef ?? createApiKeyRef()
+
+  await secretStore.setItemAsync(apiKeyRef, input.apiKey)
+
+  database
     .insert(providerTable)
     .values({
-      ...input,
+      apiKeyRef,
+      baseUrl: input.baseUrl,
+      id: input.id,
       isEnabled: true,
+      modelId: input.modelId,
+      name: input.name,
       orderKey: 'p0',
       createdAt: now,
       updatedAt: now
@@ -30,7 +62,6 @@ export function saveProvider(input: ProviderInput): void {
     .onConflictDoUpdate({
       target: providerTable.id,
       set: {
-        apiKey: input.apiKey,
         baseUrl: input.baseUrl,
         isEnabled: true,
         modelId: input.modelId,
@@ -41,6 +72,16 @@ export function saveProvider(input: ProviderInput): void {
     .run()
 }
 
-export function deleteProvider(id: string): void {
-  getDatabase().delete(providerTable).where(eq(providerTable.id, id)).run()
+export async function deleteProvider(
+  id: string,
+  database: MobileDatabase,
+  secretStore: ProviderSecretStore
+): Promise<void> {
+  const record = database
+    .select({ apiKeyRef: providerTable.apiKeyRef })
+    .from(providerTable)
+    .where(eq(providerTable.id, id))
+    .get()
+  database.delete(providerTable).where(eq(providerTable.id, id)).run()
+  if (record) await secretStore.deleteItemAsync(record.apiKeyRef)
 }

@@ -1,9 +1,10 @@
 import type { AgentStatus, RuntimeEvent } from '@cherrystudio/ai-runtime-contracts'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import { StatusBar } from 'expo-status-bar'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   Button,
   KeyboardAvoidingView,
   Platform,
@@ -21,10 +22,12 @@ import { ConversationMessageList } from './src/components/ConversationMessageLis
 import { ProviderSettings } from './src/components/ProviderSettings'
 import { RuntimeEventLog } from './src/components/RuntimeEventLog'
 import { TopicSwitcher } from './src/components/TopicSwitcher'
+import { DEFAULT_PROVIDER_ID } from './src/db/constants'
 import { loadConversationMessages, saveConversationMessages } from './src/db/conversation'
-import { DEFAULT_PROVIDER_ID, initializeDatabase } from './src/db/database'
+import { getDatabase, initializeDatabase } from './src/db/database'
 import { getProvider, saveProvider } from './src/db/provider'
-import { createTopic, listTopics, type TopicRecord } from './src/db/topic'
+import { providerSecretStore } from './src/db/providerSecretStore'
+import { createTopic, deleteTopic, listTopics, renameTopic, type TopicRecord } from './src/db/topic'
 import i18n from './src/i18n'
 
 type Screen = 'chat' | 'settings'
@@ -44,38 +47,73 @@ export default function App() {
   const [status, setStatus] = useState<AgentStatus>('idle')
   const [validationError, setValidationError] = useState('')
   const [databaseReady, setDatabaseReady] = useState(false)
+  const streamingBuffer = useRef('')
+  const streamingFrame = useRef<ReturnType<typeof requestAnimationFrame> | undefined>(undefined)
+
+  const clearStreamingAnswer = () => {
+    streamingBuffer.current = ''
+    if (streamingFrame.current !== undefined) cancelAnimationFrame(streamingFrame.current)
+    streamingFrame.current = undefined
+    setStreamingAnswer('')
+  }
+
+  const queueStreamingAnswer = (text: string, replace = false) => {
+    streamingBuffer.current = replace ? text : streamingBuffer.current + text
+    if (streamingFrame.current !== undefined) return
+
+    streamingFrame.current = requestAnimationFrame(() => {
+      streamingFrame.current = undefined
+      setStreamingAnswer(streamingBuffer.current)
+    })
+  }
 
   useEffect(() => {
-    try {
-      initializeDatabase()
-      const provider = getProvider(DEFAULT_PROVIDER_ID)
-      if (provider) {
-        setApiKey(provider.apiKey)
-        setBaseUrl(provider.baseUrl)
-        setModelId(provider.modelId)
-      } else {
-        setScreen('settings')
-        setProviderFeedback(i18n.t('missingProviderConfig'))
-      }
+    let cancelled = false
 
-      const storedTopics = listTopics()
-      const initialTopic = storedTopics[0] ?? createTopic()
-      setTopics(storedTopics.length > 0 ? storedTopics : [initialTopic])
-      setActiveTopicId(initialTopic.id)
-      setConversationMessages(loadConversationMessages(initialTopic.id))
-      setDatabaseReady(true)
-    } catch (error) {
-      setStatus('error')
-      setValidationError(error instanceof Error ? error.message : String(error))
+    const initialize = async () => {
+      try {
+        await initializeDatabase()
+        const database = getDatabase()
+        const provider = await getProvider(DEFAULT_PROVIDER_ID, database, providerSecretStore)
+        if (cancelled) return
+
+        if (provider) {
+          setApiKey(provider.apiKey)
+          setBaseUrl(provider.baseUrl)
+          setModelId(provider.modelId)
+        }
+        if (!provider?.apiKey) {
+          setScreen('settings')
+          setProviderFeedback(i18n.t('missingProviderConfig'))
+        }
+
+        const storedTopics = listTopics(database)
+        const initialTopic = storedTopics[0] ?? createTopic(database)
+        setTopics(storedTopics.length > 0 ? storedTopics : [initialTopic])
+        setActiveTopicId(initialTopic.id)
+        setConversationMessages(loadConversationMessages(initialTopic.id, database))
+        setDatabaseReady(true)
+      } catch (error) {
+        if (cancelled) return
+        setStatus('error')
+        setValidationError(error instanceof Error ? error.message : String(error))
+      }
+    }
+
+    void initialize()
+    return () => {
+      cancelled = true
+      if (streamingFrame.current !== undefined) cancelAnimationFrame(streamingFrame.current)
     }
   }, [])
 
   const selectTopic = (topicId: string) => {
     try {
+      const database = getDatabase()
       setActiveTopicId(topicId)
-      setConversationMessages(loadConversationMessages(topicId))
+      setConversationMessages(loadConversationMessages(topicId, database))
       setEvents([])
-      setStreamingAnswer('')
+      clearStreamingAnswer()
       setStatus('idle')
       setValidationError('')
     } catch (error) {
@@ -86,8 +124,9 @@ export default function App() {
 
   const addTopic = () => {
     try {
-      const topic = createTopic()
-      setTopics(listTopics())
+      const database = getDatabase()
+      const topic = createTopic(database)
+      setTopics(listTopics(database))
       selectTopic(topic.id)
     } catch (error) {
       setStatus('error')
@@ -95,20 +134,68 @@ export default function App() {
     }
   }
 
-  const saveProviderSettings = () => {
+  const updateTopicName = (topicId: string, name: string) => {
+    try {
+      const database = getDatabase()
+      renameTopic(topicId, name, database)
+      setTopics(listTopics(database))
+    } catch (error) {
+      setStatus('error')
+      setValidationError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const confirmTopicDeletion = (topicId: string) => {
+    Alert.alert(i18n.t('deleteTopicTitle'), i18n.t('deleteTopicMessage'), [
+      { style: 'cancel', text: i18n.t('cancel') },
+      {
+        style: 'destructive',
+        text: i18n.t('deleteTopic'),
+        onPress: () => {
+          try {
+            const database = getDatabase()
+            deleteTopic(topicId, database)
+            const remainingTopics = listTopics(database)
+            if (topicId !== activeTopicId) {
+              setTopics(remainingTopics)
+              return
+            }
+
+            const nextTopic = remainingTopics[0] ?? createTopic(database)
+            setTopics(remainingTopics.length > 0 ? remainingTopics : [nextTopic])
+            setActiveTopicId(nextTopic.id)
+            setConversationMessages(loadConversationMessages(nextTopic.id, database))
+            setEvents([])
+            clearStreamingAnswer()
+            setStatus('idle')
+            setValidationError('')
+          } catch (error) {
+            setStatus('error')
+            setValidationError(error instanceof Error ? error.message : String(error))
+          }
+        }
+      }
+    ])
+  }
+
+  const saveProviderSettings = async () => {
     if (![baseUrl, apiKey, modelId].every((value) => value.trim())) {
       setProviderFeedback(i18n.t('missingProviderConfig'))
       return
     }
 
     try {
-      saveProvider({
-        id: DEFAULT_PROVIDER_ID,
-        name: 'OpenAI Compatible',
-        apiKey: apiKey.trim(),
-        baseUrl: baseUrl.trim(),
-        modelId: modelId.trim()
-      })
+      await saveProvider(
+        {
+          id: DEFAULT_PROVIDER_ID,
+          name: 'OpenAI Compatible',
+          apiKey: apiKey.trim(),
+          baseUrl: baseUrl.trim(),
+          modelId: modelId.trim()
+        },
+        getDatabase(),
+        providerSecretStore
+      )
       setApiKey(apiKey.trim())
       setBaseUrl(baseUrl.trim())
       setModelId(modelId.trim())
@@ -134,7 +221,7 @@ export default function App() {
     if (!activeTopicId) return
 
     const topicId = activeTopicId
-    setStreamingAnswer('')
+    clearStreamingAnswer()
     setEvents([])
     setStatus('running')
     setValidationError('')
@@ -152,8 +239,9 @@ export default function App() {
       })
       agent = activeAgent
       unsubscribeEvents = subscribeToRuntimeEvents(activeAgent, (event) => {
-        setEvents((current) => [...current, event])
-        if (event.type === 'TEXT_DELTA') setStreamingAnswer((current) => current + event.delta)
+        if (event.type.startsWith('MCP_TOOL_')) setEvents((current) => [...current, event])
+        if (event.type === 'TEXT_DELTA') queueStreamingAnswer(event.delta)
+        if (event.type === 'TEXT_END') queueStreamingAnswer(event.text, true)
         if (event.type === 'RUN_STATUS') {
           setStatus(event.status)
           if (event.error) setValidationError(event.error)
@@ -162,10 +250,11 @@ export default function App() {
       unsubscribePersistence = activeAgent.subscribe((event) => {
         if (event.type !== 'message_end') return
         const messages = [...activeAgent.state.messages]
-        saveConversationMessages(messages, topicId)
+        const database = getDatabase()
+        saveConversationMessages(messages, topicId, database)
         setConversationMessages(messages)
-        setTopics(listTopics())
-        if (event.message.role === 'assistant') setStreamingAnswer('')
+        setTopics(listTopics(database))
+        if (event.message.role === 'assistant') clearStreamingAnswer()
       })
       await activeAgent.prompt(prompt.trim())
       setPrompt('')
@@ -178,10 +267,11 @@ export default function App() {
       if (agent) {
         try {
           const messages = [...agent.state.messages]
-          saveConversationMessages(messages, topicId)
+          const database = getDatabase()
+          saveConversationMessages(messages, topicId, database)
           setConversationMessages(messages)
-          setTopics(listTopics())
-          setStreamingAnswer('')
+          setTopics(listTopics(database))
+          clearStreamingAnswer()
         } catch (error) {
           setStatus('error')
           setValidationError(error instanceof Error ? error.message : String(error))
@@ -227,7 +317,7 @@ export default function App() {
             onApiKeyChange={setApiKey}
             onBaseUrlChange={setBaseUrl}
             onModelIdChange={setModelId}
-            onSave={saveProviderSettings}
+            onSave={() => void saveProviderSettings()}
           />
         ) : (
           <>
@@ -236,6 +326,8 @@ export default function App() {
                 activeTopicId={activeTopicId}
                 disabled={!databaseReady || running}
                 onCreate={addTopic}
+                onDelete={confirmTopicDeletion}
+                onRename={updateTopicName}
                 onSelect={selectTopic}
                 topics={topics}
               />
@@ -243,15 +335,7 @@ export default function App() {
 
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>{activeTopic?.name || i18n.t('untitledTopic')}</Text>
-              <ConversationMessageList messages={conversationMessages} />
-              {streamingAnswer ? (
-                <View style={styles.streaming}>
-                  <Text style={styles.streamingLabel}>{i18n.t('streamingAnswer')}</Text>
-                  <Text selectable style={styles.streamingText}>
-                    {streamingAnswer}
-                  </Text>
-                </View>
-              ) : null}
+              <ConversationMessageList messages={conversationMessages} streamingText={streamingAnswer} />
             </View>
 
             <View style={styles.card}>
@@ -307,9 +391,6 @@ const styles = StyleSheet.create({
   sectionTitle: { color: '#101828', fontSize: 17, fontWeight: '600' },
   status: { alignItems: 'center', flexDirection: 'row', gap: 8, justifyContent: 'center' },
   statusText: { color: '#475467', fontSize: 13 },
-  streaming: { backgroundColor: '#eff8ff', borderRadius: 12, gap: 4, padding: 12 },
-  streamingLabel: { color: '#175cd3', fontSize: 12, fontWeight: '600' },
-  streamingText: { color: '#1849a9', lineHeight: 21 },
   subtitle: { color: '#667085', lineHeight: 20 },
   tab: { alignItems: 'center', borderRadius: 8, flex: 1, paddingVertical: 9 },
   tabText: { color: '#475467', fontWeight: '600' },
