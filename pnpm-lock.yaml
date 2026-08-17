@@ -1360,12 +1360,18 @@ importers:
       expo-secure-store:
         specifier: ~57.0.1
         version: 57.0.1(expo@57.0.14)
+      expo-splash-screen:
+        specifier: ~57.0.7
+        version: 57.0.7(expo@57.0.14)(typescript@6.0.3)
       expo-sqlite:
         specifier: ~57.0.1
         version: 57.0.1(expo@57.0.14)(react-native@0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3))(react@19.2.3)
       expo-status-bar:
         specifier: ~57.0.1
         version: 57.0.1(expo@57.0.14)(react-native@0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3))(react@19.2.3)
+      expo-system-ui:
+        specifier: ~57.0.2
+        version: 57.0.2(expo@57.0.14)(react-native@0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3))
       i18next:
         specifier: 23.16.8
         version: 23.16.8
@@ -10493,6 +10499,11 @@ packages:
     resolution: {integrity: sha512-aK+LdKzauHSGmsOStZtyxdzv0zWssCkxTw3m4QuOhfDSJsZaMRTd9O41d8ixU/QfELTbaJ0oRNcF7JFV/7O9YQ==}
     engines: {node: '>=20.16.0'}
 
+  expo-splash-screen@57.0.7:
+    resolution: {integrity: sha512-QxqfjOCTnTGnqK2BxfEtxUJOcnsJbUXO873Q342r3VkgHAG877eozsNzgYWQXcCFj/asMwx2uy9OXxBShxc5rQ==}
+    peerDependencies:
+      expo: '*'
+
   expo-sqlite@57.0.1:
     resolution: {integrity: sha512-I6KoUvfGIiROTKxr5D3H+jRIGA/iEvWEtqHK4XMukAA7tVTinz/YdS8zOz6/DdG6vgrNmvF7gyOcbhLinlfxzQ==}
     peerDependencies:
@@ -10506,6 +10517,16 @@ packages:
       expo: '*'
       react: '*'
       react-native: '*'
+
+  expo-system-ui@57.0.2:
+    resolution: {integrity: sha512-zABCRqFSioDBAo/RtmS0dQiGgDtDPZUVk01Y3Ti4ducobNM4HTM2sNAtq+YPpEUhaVW3hccPVsEUH4LK/ADVhA==}
+    peerDependencies:
+      expo: '*'
+      react-native: '*'
+      react-native-web: '*'
+    peerDependenciesMeta:
+      react-native-web:
+        optional: true
 
   expo-updates-interface@57.0.1:
     resolution: {integrity: sha512-+LUWwJ0gf/TEKMVdQAw/Gjih4dvrk+URgy24X9qEGKuuMDZqjBRm9T4yQyBVALGL5TTdPUaB6ILxx3lshm3pwQ==}
@@ -26052,6 +26073,16 @@ snapshots:
 
   expo-server@57.0.3: {}
 
+  expo-splash-screen@57.0.7(expo@57.0.14)(typescript@6.0.3):
+    dependencies:
+      '@expo/config-plugins': 57.0.8(typescript@6.0.3)
+      '@expo/image-utils': 0.11.4(typescript@6.0.3)
+      expo: 57.0.14(@babel/core@7.28.5)(@expo/dom-webview@57.0.1)(react-dom@19.2.3(react@19.2.3))(react-native@0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
+      xml2js: 0.6.0
+    transitivePeerDependencies:
+      - supports-color
+      - typescript
+
   expo-sqlite@57.0.1(expo@57.0.14)(react-native@0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3))(react@19.2.3):
     dependencies:
       await-lock: 2.2.2
@@ -26064,6 +26095,15 @@ snapshots:
       expo: 57.0.14(@babel/core@7.28.5)(@expo/dom-webview@57.0.1)(react-dom@19.2.3(react@19.2.3))(react-native@0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
       react: 19.2.3
       react-native: 0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3)
+
+  expo-system-ui@57.0.2(expo@57.0.14)(react-native@0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3)):
+    dependencies:
+      '@react-native/normalize-colors': 0.86.2
+      debug: 4.4.3
+      expo: 57.0.14(@babel/core@7.28.5)(@expo/dom-webview@57.0.1)(react-dom@19.2.3(react@19.2.3))(react-native@0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
+      react-native: 0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3)
+    transitivePeerDependencies:
+      - supports-color
 
   expo-updates-interface@57.0.1(expo@57.0.14):
     dependencies:

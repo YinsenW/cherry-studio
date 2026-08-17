@@ -40,7 +40,7 @@ import { getProvider, saveProvider } from './src/db/provider'
 import { providerSecretStore } from './src/db/providerSecretStore'
 import { createTopic, deleteTopic, listTopics, renameTopic, type TopicRecord } from './src/db/topic'
 import i18n from './src/i18n'
-import { subscribeToNetworkStatus } from './src/network'
+import { resolveNetworkFeedback, subscribeToNetworkStatus } from './src/network'
 import {
   getMessageAttachments,
   getRetryableUserMessage,
@@ -158,17 +158,24 @@ export default function App() {
     () =>
       subscribeToNetworkStatus((nextIsOnline) => {
         const previousIsOnline = isOnlineRef.current
+        const feedback = resolveNetworkFeedback(
+          previousIsOnline,
+          nextIsOnline,
+          Boolean(getRetryableUserMessage(latestState.current.conversationMessages))
+        )
         isOnlineRef.current = nextIsOnline
         setIsOnline(nextIsOnline)
 
-        if (!nextIsOnline) {
+        if (feedback === 'offline') {
           if (activeAgent.current) {
             networkInterrupted.current = true
             activeAgent.current.abort()
           }
           setValidationError(i18n.t('offlineDescription'))
-        } else if (previousIsOnline === false && getRetryableUserMessage(latestState.current.conversationMessages)) {
+        } else if (feedback === 'restored') {
           setValidationError(i18n.t('networkRestored'))
+        } else if (feedback === 'clear') {
+          setValidationError('')
         }
       }),
     []

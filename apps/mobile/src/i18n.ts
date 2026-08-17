@@ -1,6 +1,7 @@
 import i18n from 'i18next'
 
 void i18n.init({
+  compatibilityJSON: 'v3',
   fallbackLng: 'zh-CN',
   lng: 'zh-CN',
   resources: {

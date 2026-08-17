@@ -7,7 +7,7 @@ vi.mock('@react-native-community/netinfo', () => ({
   default: { addEventListener }
 }))
 
-import { isNetworkAvailable, subscribeToNetworkStatus } from '../network'
+import { isNetworkAvailable, resolveNetworkFeedback, subscribeToNetworkStatus } from '../network'
 
 function createState(isConnected: boolean | null, isInternetReachable: boolean | null): NetInfoState {
   return { isConnected, isInternetReachable, type: 'unknown', details: null } as NetInfoState
@@ -37,5 +37,10 @@ describe('mobile network status', () => {
 
     expect(onChange.mock.calls).toEqual([[false], [true]])
     expect(result).toBe(unsubscribe)
+  })
+
+  it('clears stale offline feedback after connectivity recovers without a retryable message', () => {
+    expect(resolveNetworkFeedback(false, true, false)).toBe('clear')
+    expect(resolveNetworkFeedback(false, true, true)).toBe('restored')
   })
 })
