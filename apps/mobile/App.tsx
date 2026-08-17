@@ -1,6 +1,7 @@
 import type { AgentStatus, RuntimeEvent } from '@cherrystudio/ai-runtime-contracts'
+import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import { StatusBar } from 'expo-status-bar'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Button,
@@ -16,7 +17,22 @@ import {
 import { createOpenAiCompatibleAgent } from './src/agent/openAiCompatibleAgent'
 import { subscribeToRuntimeEvents } from './src/agent/runtimeEventBridge'
 import { RuntimeEventLog } from './src/components/RuntimeEventLog'
+import { loadConversationMessages, saveConversationMessages } from './src/db/conversation'
+import { DEFAULT_PROVIDER_ID, initializeDatabase } from './src/db/database'
+import { getProvider, saveProvider } from './src/db/provider'
 import i18n from './src/i18n'
+
+function getLatestAssistantText(messages: AgentMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.role !== 'assistant') continue
+    return message.content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('')
+  }
+  return ''
+}
 
 export default function App() {
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1')
@@ -25,8 +41,30 @@ export default function App() {
   const [prompt, setPrompt] = useState(i18n.t('defaultPrompt'))
   const [events, setEvents] = useState<RuntimeEvent[]>([])
   const [answer, setAnswer] = useState('')
+  const [conversationMessages, setConversationMessages] = useState<AgentMessage[]>([])
   const [status, setStatus] = useState<AgentStatus>('idle')
   const [validationError, setValidationError] = useState('')
+  const [databaseReady, setDatabaseReady] = useState(false)
+
+  useEffect(() => {
+    try {
+      initializeDatabase()
+      const provider = getProvider(DEFAULT_PROVIDER_ID)
+      if (provider) {
+        setApiKey(provider.apiKey)
+        setBaseUrl(provider.baseUrl)
+        setModelId(provider.modelId)
+      }
+
+      const restoredMessages = loadConversationMessages()
+      setConversationMessages(restoredMessages)
+      setAnswer(getLatestAssistantText(restoredMessages))
+      setDatabaseReady(true)
+    } catch (error) {
+      setStatus('error')
+      setValidationError(error instanceof Error ? error.message : String(error))
+    }
+  }, [])
 
   const submit = async () => {
     if (![baseUrl, apiKey, modelId, prompt].every((value) => value.trim())) {
@@ -39,27 +77,47 @@ export default function App() {
     setStatus('running')
     setValidationError('')
 
-    const agent = createOpenAiCompatibleAgent({
-      apiKey: apiKey.trim(),
-      baseUrl: baseUrl.trim(),
-      modelId: modelId.trim()
-    })
-    const unsubscribe = subscribeToRuntimeEvents(agent, (event) => {
-      setEvents((current) => [...current, event])
-      if (event.type === 'TEXT_DELTA') setAnswer((current) => current + event.delta)
-      if (event.type === 'RUN_STATUS') {
-        setStatus(event.status)
-        if (event.error) setValidationError(event.error)
-      }
-    })
+    let agent: ReturnType<typeof createOpenAiCompatibleAgent> | undefined
+    let unsubscribe: (() => void) | undefined
 
     try {
+      saveProvider({
+        id: DEFAULT_PROVIDER_ID,
+        name: 'OpenAI Compatible',
+        apiKey: apiKey.trim(),
+        baseUrl: baseUrl.trim(),
+        modelId: modelId.trim()
+      })
+      agent = createOpenAiCompatibleAgent({
+        apiKey: apiKey.trim(),
+        baseUrl: baseUrl.trim(),
+        messages: conversationMessages,
+        modelId: modelId.trim()
+      })
+      unsubscribe = subscribeToRuntimeEvents(agent, (event) => {
+        setEvents((current) => [...current, event])
+        if (event.type === 'TEXT_DELTA') setAnswer((current) => current + event.delta)
+        if (event.type === 'RUN_STATUS') {
+          setStatus(event.status)
+          if (event.error) setValidationError(event.error)
+        }
+      })
       await agent.prompt(prompt.trim())
     } catch (error) {
       setStatus('error')
       setValidationError(error instanceof Error ? error.message : String(error))
     } finally {
-      unsubscribe()
+      unsubscribe?.()
+      if (agent) {
+        try {
+          const messages = [...agent.state.messages]
+          saveConversationMessages(messages)
+          setConversationMessages(messages)
+        } catch (error) {
+          setStatus('error')
+          setValidationError(error instanceof Error ? error.message : String(error))
+        }
+      }
     }
   }
 
@@ -97,10 +155,12 @@ export default function App() {
             value={prompt}
           />
           {validationError ? <Text style={styles.error}>{validationError}</Text> : null}
-          <Button disabled={running} onPress={() => void submit()} title={i18n.t('send')} />
+          <Button disabled={!databaseReady || running} onPress={() => void submit()} title={i18n.t('send')} />
           <View style={styles.status}>
             {running ? <ActivityIndicator size="small" /> : null}
-            <Text style={styles.statusText}>{running ? i18n.t('running') : i18n.t('status', { status })}</Text>
+            <Text style={styles.statusText}>
+              {!databaseReady ? i18n.t('initializing') : running ? i18n.t('running') : i18n.t('status', { status })}
+            </Text>
           </View>
         </View>
 

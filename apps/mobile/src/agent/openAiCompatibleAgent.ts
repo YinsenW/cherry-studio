@@ -1,10 +1,11 @@
-import { Agent, type AgentTool, type StreamFn } from '@earendil-works/pi-agent-core'
+import { Agent, type AgentMessage, type AgentTool, type StreamFn } from '@earendil-works/pi-agent-core'
 import { type Model, Type } from '@earendil-works/pi-ai'
 import { streamSimple as streamOpenAiCompatible } from '@earendil-works/pi-ai/api/openai-completions'
 
 export interface OpenAiCompatibleConfig {
   apiKey: string
   baseUrl: string
+  messages?: AgentMessage[]
   modelId: string
 }
 
@@ -59,6 +60,7 @@ export function createOpenAiCompatibleAgent(config: OpenAiCompatibleConfig): Age
   return new Agent({
     initialState: {
       model,
+      messages: config.messages ?? [],
       systemPrompt:
         'You are a helpful mobile assistant. Use available tools when the user asks for information they provide.',
       tools: [currentTimeTool]
