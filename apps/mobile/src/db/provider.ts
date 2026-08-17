@@ -9,6 +9,7 @@ export interface ProviderInput {
   id: string
   modelId: string
   name: string
+  supportsImages: boolean
 }
 
 export interface Provider extends Omit<ProviderRecord, 'apiKeyRef'> {
@@ -56,6 +57,7 @@ export async function saveProvider(
       modelId: input.modelId,
       name: input.name,
       orderKey: 'p0',
+      supportsImages: input.supportsImages,
       createdAt: now,
       updatedAt: now
     })
@@ -66,6 +68,7 @@ export async function saveProvider(
         isEnabled: true,
         modelId: input.modelId,
         name: input.name,
+        supportsImages: input.supportsImages,
         updatedAt: now
       }
     })

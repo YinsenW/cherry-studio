@@ -1,4 +1,4 @@
-import { Button, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Button, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
 
 import i18n from '../i18n'
 
@@ -11,6 +11,8 @@ interface ProviderSettingsProps {
   onBaseUrlChange: (value: string) => void
   onModelIdChange: (value: string) => void
   onSave: () => void
+  onSupportsImagesChange: (value: boolean) => void
+  supportsImages: boolean
 }
 
 export function ProviderSettings({
@@ -21,7 +23,9 @@ export function ProviderSettings({
   onApiKeyChange,
   onBaseUrlChange,
   onModelIdChange,
-  onSave
+  onSave,
+  onSupportsImagesChange,
+  supportsImages
 }: ProviderSettingsProps) {
   return (
     <View style={styles.card}>
@@ -40,6 +44,17 @@ export function ProviderSettings({
       />
       <Text style={styles.label}>{i18n.t('model')}</Text>
       <TextInput autoCapitalize="none" onChangeText={onModelIdChange} style={styles.input} value={modelId} />
+      <View style={styles.capabilityRow}>
+        <View style={styles.capabilityText}>
+          <Text style={styles.label}>{i18n.t('supportsImages')}</Text>
+          <Text style={styles.description}>{i18n.t('supportsImagesDescription')}</Text>
+        </View>
+        <Switch
+          accessibilityLabel={i18n.t('supportsImages')}
+          onValueChange={onSupportsImagesChange}
+          value={supportsImages}
+        />
+      </View>
       {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
       <Button onPress={onSave} title={i18n.t('saveProvider')} />
     </View>
@@ -47,6 +62,8 @@ export function ProviderSettings({
 }
 
 const styles = StyleSheet.create({
+  capabilityRow: { alignItems: 'center', flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
+  capabilityText: { flex: 1 },
   card: { backgroundColor: '#ffffff', borderColor: '#e4e7ec', borderRadius: 14, borderWidth: 1, gap: 10, padding: 16 },
   description: { color: '#667085', lineHeight: 20 },
   feedback: { color: '#175cd3', lineHeight: 20 },

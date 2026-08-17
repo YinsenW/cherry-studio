@@ -2,11 +2,15 @@ import { Agent, type AgentMessage, type AgentTool, type StreamFn } from '@earend
 import { lazyStream, type Message, type Model, Type } from '@earendil-works/pi-ai'
 import { streamSimple as streamOpenAiCompatible } from '@earendil-works/pi-ai/api/openai-completions'
 
+import { getMessageAttachments } from '../types/message'
+
 export interface OpenAiCompatibleConfig {
   apiKey: string
   baseUrl: string
   messages?: AgentMessage[]
   modelId: string
+  readImage: (uri: string) => Promise<string>
+  supportsImages: boolean
 }
 
 const CurrentTimeParameters = Type.Object({})
@@ -33,7 +37,7 @@ function createModel(config: OpenAiCompatibleConfig): Model<'openai-completions'
     provider: 'openai-compatible',
     baseUrl: config.baseUrl.replace(/\/+$/, ''),
     reasoning: false,
-    input: ['text'],
+    input: config.supportsImages ? ['text', 'image'] : ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 128_000,
     maxTokens: 4_096,
@@ -48,12 +52,33 @@ function createModel(config: OpenAiCompatibleConfig): Model<'openai-completions'
   }
 }
 
-export function convertMessagesForLlm(messages: AgentMessage[]): Message[] {
+export async function convertMessagesForLlm(
+  messages: AgentMessage[],
+  supportsImages: boolean,
+  readImage: (uri: string) => Promise<string>
+): Promise<Message[]> {
   const converted: Message[] = []
 
   for (const message of messages) {
     if (message.role === 'user') {
-      converted.push({ role: 'user', content: message.content, timestamp: message.timestamp })
+      const textContent =
+        typeof message.content === 'string'
+          ? [{ type: 'text' as const, text: message.content }]
+          : message.content.filter((part) => part.type === 'text')
+      const attachments = supportsImages ? getMessageAttachments(message) : []
+      if (attachments.length === 0) {
+        converted.push({ role: 'user', content: textContent, timestamp: message.timestamp })
+        continue
+      }
+
+      const imageContent = await Promise.all(
+        attachments.map(async (attachment) => ({
+          type: 'image' as const,
+          data: await readImage(attachment.uri),
+          mimeType: attachment.mimeType
+        }))
+      )
+      converted.push({ role: 'user', content: [...textContent, ...imageContent], timestamp: message.timestamp })
     } else if (message.role === 'assistant' || message.role === 'toolResult') {
       converted.push(message)
     }
@@ -74,7 +99,7 @@ export function createOpenAiCompatibleAgent(config: OpenAiCompatibleConfig): Age
     )
 
   return new Agent({
-    convertToLlm: convertMessagesForLlm,
+    convertToLlm: (messages) => convertMessagesForLlm(messages, config.supportsImages, config.readImage),
     initialState: {
       model,
       messages: config.messages ?? [],

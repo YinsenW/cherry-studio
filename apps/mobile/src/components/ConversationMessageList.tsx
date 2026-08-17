@@ -4,12 +4,12 @@ import { ActivityIndicator, FlatList, Image, StyleSheet, Text, View } from 'reac
 import Markdown from 'react-native-markdown-display'
 
 import i18n from '../i18n'
-import { getMessageAttachments } from '../types/message'
+import { getMessageAttachments, type MobileAgentMessage } from '../types/message'
 
 interface ConversationMessageListProps {
   footer?: ReactElement
   header?: ReactElement
-  messages: AgentMessage[]
+  messages: MobileAgentMessage[]
   streamingText?: string
 }
 
@@ -173,6 +173,11 @@ export function ConversationMessageList({
           <View style={[styles.message, userMessage && styles.user]}>
             <Text style={[styles.role, userMessage && styles.userText]}>{getRoleLabel(message)}</Text>
             <MessageContent message={message} />
+            {message.role === 'user' && message.deliveryStatus !== undefined && message.deliveryStatus !== 'sent' ? (
+              <Text style={[styles.deliveryStatus, styles.userText]}>
+                {message.deliveryStatus === 'pending' ? i18n.t('messagePending') : i18n.t('messageFailed')}
+              </Text>
+            ) : null}
           </View>
         )
       }}
@@ -212,6 +217,7 @@ const styles = StyleSheet.create({
   boundarySection: { gap: 16 },
   content: { color: '#344054', lineHeight: 21 },
   contentParts: { gap: 8 },
+  deliveryStatus: { fontSize: 12, fontWeight: '600' },
   empty: { color: '#667085', lineHeight: 20 },
   flatList: { flex: 1 },
   list: { gap: 10, padding: 20, paddingBottom: 48, paddingTop: 64 },

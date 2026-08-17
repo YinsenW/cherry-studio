@@ -1336,6 +1336,9 @@ importers:
       '@earendil-works/pi-ai':
         specifier: 0.84.2
         version: 0.84.2(patch_hash=d2b768875e6094a587230f43a85fb94307bfbc3d7b8cf6c3d06498e884d0ead4)(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.0)(zod@4.4.3)
+      '@react-native-community/netinfo':
+        specifier: 12.0.1
+        version: 12.0.1(react-native@0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3))(react@19.2.3)
       drizzle-orm:
         specifier: ^0.44.7
         version: 0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.11.1)(expo-sqlite@57.0.1(expo@57.0.14)(react-native@0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3))(react@19.2.3))
@@ -1348,6 +1351,9 @@ importers:
       expo-dev-client:
         specifier: ~57.0.13
         version: 57.0.13(expo@57.0.14)(react-native@0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3))
+      expo-file-system:
+        specifier: ~57.0.4
+        version: 57.0.4(expo@57.0.14)(react-native@0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3))
       expo-image-picker:
         specifier: ~57.0.11
         version: 57.0.11(expo@57.0.14)
@@ -5750,6 +5756,12 @@ packages:
     peerDependencies:
       react: '>=16.9.0'
       react-dom: '>=16.9.0'
+
+  '@react-native-community/netinfo@12.0.1':
+    resolution: {integrity: sha512-P/3caXIvfYSJG8AWJVefukg+ZGRPs+M4Lp3pNJtgcTYoJxCjWrKQGNnCkj/Cz//zWa/avGed0i/wzm0T8vV2IQ==}
+    peerDependencies:
+      react: '*'
+      react-native: '>=0.59'
 
   '@react-native/assets-registry@0.86.2':
     resolution: {integrity: sha512-vcX/mBjWAVnWofu7KecotquI2unZ/tITwA7OGdq/mdY/zmGXIEvYhfEYyOQij/LRqi9WAL+iizInTBWnxDhK/Q==}
@@ -20632,6 +20644,11 @@ snapshots:
       rc-util: 5.44.4(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       react: 19.2.3
       react-dom: 19.2.3(react@19.2.3)
+
+  '@react-native-community/netinfo@12.0.1(react-native@0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3))(react@19.2.3)':
+    dependencies:
+      react: 19.2.3
+      react-native: 0.86.2(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.2.3)
 
   '@react-native/assets-registry@0.86.2': {}
 

@@ -22,6 +22,12 @@ import {
 import { getAgentErrorMessage } from './src/agent/errorMessage'
 import { createOpenAiCompatibleAgent } from './src/agent/openAiCompatibleAgent'
 import { subscribeToRuntimeEvents } from './src/agent/runtimeEventBridge'
+import {
+  deleteAttachmentFile,
+  deleteTopicAttachments,
+  persistImageAttachment,
+  readAttachmentAsBase64
+} from './src/attachments'
 import { ConversationMessageList } from './src/components/ConversationMessageList'
 import { ProviderSettings } from './src/components/ProviderSettings'
 import { RuntimeEventLog } from './src/components/RuntimeEventLog'
@@ -34,7 +40,16 @@ import { getProvider, saveProvider } from './src/db/provider'
 import { providerSecretStore } from './src/db/providerSecretStore'
 import { createTopic, deleteTopic, listTopics, renameTopic, type TopicRecord } from './src/db/topic'
 import i18n from './src/i18n'
-import type { MobileAgentMessage, MobileImageAttachment } from './src/types/message'
+import { subscribeToNetworkStatus } from './src/network'
+import {
+  getMessageAttachments,
+  getRetryableUserMessage,
+  type MobileAgentMessage,
+  type MobileImageAttachment,
+  type MobileUserMessage,
+  resolveMessageDeliveryStatus,
+  setMessageDeliveryStatus
+} from './src/types/message'
 
 function getErrorMessage(error: unknown): string {
   return getAgentErrorMessage(error, i18n.t('networkError'))
@@ -49,6 +64,7 @@ export default function App() {
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1')
   const [apiKey, setApiKey] = useState('')
   const [modelId, setModelId] = useState('gpt-4o-mini')
+  const [supportsImages, setSupportsImages] = useState(false)
   const [providerFeedback, setProviderFeedback] = useState('')
   const [prompt, setPrompt] = useState(i18n.t('defaultPrompt'))
   const [pendingAttachments, setPendingAttachments] = useState<MobileImageAttachment[]>([])
@@ -60,9 +76,12 @@ export default function App() {
   const [status, setStatus] = useState<AgentStatus>('idle')
   const [validationError, setValidationError] = useState('')
   const [databaseReady, setDatabaseReady] = useState(false)
+  const [isOnline, setIsOnline] = useState<boolean | undefined>(undefined)
   const activeAgent = useRef<Agent | undefined>(undefined)
   const databaseReadyRef = useRef(false)
   const checkpointTask = useRef(Promise.resolve())
+  const isOnlineRef = useRef<boolean | undefined>(undefined)
+  const networkInterrupted = useRef(false)
   const streamingBuffer = useRef('')
   const streamingFrame = useRef<ReturnType<typeof requestAnimationFrame> | undefined>(undefined)
   const latestState = useRef({ activeTopicId, conversationMessages, pendingAttachments, prompt, screen })
@@ -99,6 +118,7 @@ export default function App() {
           setApiKey(provider.apiKey)
           setBaseUrl(provider.baseUrl)
           setModelId(provider.modelId)
+          setSupportsImages(provider.supportsImages)
         }
 
         const checkpoint = loadAppCheckpoint(database)
@@ -133,6 +153,26 @@ export default function App() {
       if (streamingFrame.current !== undefined) cancelAnimationFrame(streamingFrame.current)
     }
   }, [])
+
+  useEffect(
+    () =>
+      subscribeToNetworkStatus((nextIsOnline) => {
+        const previousIsOnline = isOnlineRef.current
+        isOnlineRef.current = nextIsOnline
+        setIsOnline(nextIsOnline)
+
+        if (!nextIsOnline) {
+          if (activeAgent.current) {
+            networkInterrupted.current = true
+            activeAgent.current.abort()
+          }
+          setValidationError(i18n.t('offlineDescription'))
+        } else if (previousIsOnline === false && getRetryableUserMessage(latestState.current.conversationMessages)) {
+          setValidationError(i18n.t('networkRestored'))
+        }
+      }),
+    []
+  )
 
   useEffect(() => {
     let previousState = AppState.currentState
@@ -207,6 +247,8 @@ export default function App() {
   const selectTopic = (topicId: string) => {
     try {
       const database = getDatabase()
+      for (const attachment of pendingAttachments) deleteAttachmentFile(attachment.uri)
+      setPendingAttachments([])
       setActiveTopicId(topicId)
       setConversationMessages(loadConversationMessages(topicId, database))
       setEvents([])
@@ -252,6 +294,7 @@ export default function App() {
           try {
             const database = getDatabase()
             deleteTopic(topicId, database)
+            deleteTopicAttachments(topicId)
             const remainingTopics = listTopics(database)
             if (topicId !== activeTopicId) {
               setTopics(remainingTopics)
@@ -262,6 +305,7 @@ export default function App() {
             setTopics(remainingTopics.length > 0 ? remainingTopics : [nextTopic])
             setActiveTopicId(nextTopic.id)
             setConversationMessages(loadConversationMessages(nextTopic.id, database))
+            setPendingAttachments([])
             setEvents([])
             clearStreamingAnswer()
             setStatus('idle')
@@ -288,7 +332,8 @@ export default function App() {
           name: 'OpenAI Compatible',
           apiKey: apiKey.trim(),
           baseUrl: baseUrl.trim(),
-          modelId: modelId.trim()
+          modelId: modelId.trim(),
+          supportsImages
         },
         getDatabase(),
         providerSecretStore
@@ -315,23 +360,130 @@ export default function App() {
         allowsMultipleSelection: true,
         mediaTypes: ['images'],
         quality: 0.85,
-        selectionLimit: 4
+        selectionLimit: 4 - pendingAttachments.length
       })
       if (result.canceled) return
 
-      const selected = result.assets.map<MobileImageAttachment>((asset, index) => ({
-        fileName: asset.fileName ?? `image-${Date.now()}-${index + 1}.jpg`,
-        height: asset.height,
-        id: `attachment-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
-        kind: 'image',
-        mimeType: asset.mimeType ?? 'image/jpeg',
-        uri: asset.uri,
-        width: asset.width
-      }))
-      setPendingAttachments((current) => [...current, ...selected].slice(0, 4))
+      const selected: MobileImageAttachment[] = []
+      try {
+        for (const [index, asset] of result.assets.slice(0, 4 - pendingAttachments.length).entries()) {
+          selected.push(await persistImageAttachment(asset, activeTopicId, index))
+        }
+      } catch (error) {
+        for (const attachment of selected) deleteAttachmentFile(attachment.uri)
+        throw error
+      }
+      setPendingAttachments((current) => [...current, ...selected])
       setValidationError('')
     } catch (error) {
       setValidationError(getErrorMessage(error))
+    }
+  }
+
+  const removeAttachment = (attachment: MobileImageAttachment) => {
+    try {
+      deleteAttachmentFile(attachment.uri)
+      setPendingAttachments((current) => current.filter(({ id }) => id !== attachment.id))
+    } catch (error) {
+      setValidationError(getErrorMessage(error))
+    }
+  }
+
+  const persistConversation = (messages: MobileAgentMessage[], topicId: string) => {
+    const database = getDatabase()
+    saveConversationMessages(messages, topicId, database)
+    setConversationMessages(messages)
+    setTopics(listTopics(database))
+  }
+
+  const sendUserMessage = async (message: MobileUserMessage, previousMessages: MobileAgentMessage[]) => {
+    const topicId = activeTopicId
+    const pendingMessage: MobileUserMessage = { ...message, deliveryStatus: 'pending' }
+    const pendingMessages = [...previousMessages, pendingMessage]
+    persistConversation(pendingMessages, topicId)
+    clearStreamingAnswer()
+    setEvents([])
+
+    if (isOnlineRef.current !== true) {
+      setStatus('idle')
+      setValidationError(i18n.t('retryPending'))
+      return
+    }
+
+    setStatus('running')
+    setValidationError('')
+    networkInterrupted.current = false
+
+    let agent: Agent | undefined
+    let unsubscribeEvents: (() => void) | undefined
+    let unsubscribePersistence: (() => void) | undefined
+
+    try {
+      const currentAgent = createOpenAiCompatibleAgent({
+        apiKey: apiKey.trim(),
+        baseUrl: baseUrl.trim(),
+        messages: previousMessages,
+        modelId: modelId.trim(),
+        readImage: readAttachmentAsBase64,
+        supportsImages
+      })
+      agent = currentAgent
+      activeAgent.current = currentAgent
+      unsubscribeEvents = subscribeToRuntimeEvents(currentAgent, (event) => {
+        if (event.type.startsWith('MCP_TOOL_')) setEvents((current) => [...current, event])
+        if (event.type === 'TEXT_DELTA') queueStreamingAnswer(event.delta)
+        if (event.type === 'TEXT_END') queueStreamingAnswer(event.text, true)
+        if (event.type === 'RUN_STATUS') {
+          setStatus(event.status)
+          if (event.status === 'aborted') {
+            setValidationError(networkInterrupted.current ? i18n.t('retryPending') : i18n.t('requestStopped'))
+          } else if (event.error) setValidationError(getErrorMessage(event.error))
+        }
+      })
+      unsubscribePersistence = currentAgent.subscribe((event) => {
+        if (event.type !== 'message_end') return
+        const messages = getAgentMessages(currentAgent)
+        const database = getDatabase()
+        saveConversationMessages(messages, topicId, database)
+        setConversationMessages(messages)
+        setTopics(listTopics(database))
+        if (event.message.role === 'assistant') clearStreamingAnswer()
+      })
+
+      await currentAgent.prompt(pendingMessage)
+    } catch (error) {
+      if (networkInterrupted.current) {
+        setStatus('aborted')
+        setValidationError(i18n.t('retryPending'))
+      } else if (agent?.signal?.aborted) {
+        setStatus('aborted')
+        setValidationError(i18n.t('requestStopped'))
+      } else {
+        setStatus('error')
+        setValidationError(getErrorMessage(error))
+      }
+    } finally {
+      unsubscribePersistence?.()
+      unsubscribeEvents?.()
+      if (agent) {
+        try {
+          const agentMessages = getAgentMessages(agent)
+          const deliveryStatus = resolveMessageDeliveryStatus(
+            agentMessages,
+            pendingMessage.timestamp,
+            !networkInterrupted.current && isOnlineRef.current === true
+          )
+          const messages = setMessageDeliveryStatus(agentMessages, pendingMessage.timestamp, deliveryStatus)
+          persistConversation(messages, topicId)
+          if (deliveryStatus === 'pending') setValidationError(i18n.t('retryPending'))
+          clearStreamingAnswer()
+        } catch (error) {
+          setStatus('error')
+          setValidationError(getErrorMessage(error))
+        }
+      }
+      if (activeAgent.current === agent) activeAgent.current = undefined
+      networkInterrupted.current = false
     }
   }
 
@@ -348,84 +500,41 @@ export default function App() {
       return
     }
     if (!activeTopicId) return
-
-    const topicId = activeTopicId
-    const submittedPrompt = prompt.trim()
-    const submittedAttachments = pendingAttachments
-    clearStreamingAnswer()
-    setEvents([])
-    setStatus('running')
-    setValidationError('')
-
-    let agent: Agent | undefined
-    let unsubscribeEvents: (() => void) | undefined
-    let unsubscribePersistence: (() => void) | undefined
-
-    try {
-      const currentAgent = createOpenAiCompatibleAgent({
-        apiKey: apiKey.trim(),
-        baseUrl: baseUrl.trim(),
-        messages: conversationMessages,
-        modelId: modelId.trim()
-      })
-      agent = currentAgent
-      activeAgent.current = currentAgent
-      unsubscribeEvents = subscribeToRuntimeEvents(currentAgent, (event) => {
-        if (event.type.startsWith('MCP_TOOL_')) setEvents((current) => [...current, event])
-        if (event.type === 'TEXT_DELTA') queueStreamingAnswer(event.delta)
-        if (event.type === 'TEXT_END') queueStreamingAnswer(event.text, true)
-        if (event.type === 'RUN_STATUS') {
-          setStatus(event.status)
-          if (event.status === 'aborted') setValidationError(i18n.t('requestStopped'))
-          else if (event.error) setValidationError(getErrorMessage(event.error))
-        }
-      })
-      unsubscribePersistence = currentAgent.subscribe((event) => {
-        if (event.type !== 'message_end') return
-        const messages = getAgentMessages(currentAgent)
-        const database = getDatabase()
-        saveConversationMessages(messages, topicId, database)
-        setConversationMessages(messages)
-        setTopics(listTopics(database))
-        if (event.message.role === 'assistant') clearStreamingAnswer()
-      })
-
-      const userMessage: MobileAgentMessage = {
-        role: 'user',
-        content: submittedPrompt,
-        timestamp: Date.now(),
-        ...(submittedAttachments.length > 0 ? { attachments: submittedAttachments } : {})
-      }
-      const promptTask = currentAgent.prompt(userMessage)
-      setPrompt('')
-      setPendingAttachments([])
-      await promptTask
-    } catch (error) {
-      if (agent?.signal?.aborted) {
-        setStatus('aborted')
-        setValidationError(i18n.t('requestStopped'))
-      } else {
-        setStatus('error')
-        setValidationError(getErrorMessage(error))
-      }
-    } finally {
-      unsubscribePersistence?.()
-      unsubscribeEvents?.()
-      if (agent) {
-        try {
-          const messages = getAgentMessages(agent)
-          const database = getDatabase()
-          saveConversationMessages(messages, topicId, database)
-          setConversationMessages(messages)
-          setTopics(listTopics(database))
-          clearStreamingAnswer()
-        } catch (error) {
-          setStatus('error')
-          setValidationError(getErrorMessage(error))
-        }
-      }
-      if (activeAgent.current === agent) activeAgent.current = undefined
+    if (pendingAttachments.length > 0 && !supportsImages) {
+      setValidationError(i18n.t('imageInputUnsupported'))
+      return
     }
+
+    const userMessage: MobileUserMessage = {
+      role: 'user',
+      content: prompt.trim(),
+      timestamp: Date.now(),
+      ...(pendingAttachments.length > 0 ? { attachments: pendingAttachments } : {})
+    }
+    setPrompt('')
+    setPendingAttachments([])
+    await sendUserMessage(userMessage, conversationMessages)
+  }
+
+  const retry = async () => {
+    const message = getRetryableUserMessage(conversationMessages)
+    if (!message) return
+    if (![baseUrl, apiKey, modelId].every((value) => value.trim())) {
+      const error = i18n.t('missingProviderConfig')
+      setValidationError(error)
+      setProviderFeedback(error)
+      setScreen('settings')
+      return
+    }
+    if (getMessageAttachments(message).length > 0 && !supportsImages) {
+      setValidationError(i18n.t('imageInputUnsupported'))
+      return
+    }
+
+    const messageIndex = conversationMessages.findIndex(
+      (item) => item.role === 'user' && item.timestamp === message.timestamp
+    )
+    await sendUserMessage(message, conversationMessages.slice(0, messageIndex))
   }
 
   const stop = () => {
@@ -435,6 +544,7 @@ export default function App() {
 
   const running = status === 'running' || status === 'waiting-for-approval'
   const activeTopic = topics.find((topic) => topic.id === activeTopicId)
+  const retryableMessage = getRetryableUserMessage(conversationMessages)
   const navigationHeader = (
     <View style={styles.header}>
       <Text style={styles.title}>{i18n.t('title')}</Text>
@@ -462,6 +572,12 @@ export default function App() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       style={styles.screen}>
       <StatusBar style="dark" />
+      {isOnline === false ? (
+        <View accessibilityRole="alert" style={styles.offlineBanner}>
+          <Text style={styles.offlineTitle}>{i18n.t('offline')}</Text>
+          <Text style={styles.offlineText}>{i18n.t('offlineDescription')}</Text>
+        </View>
+      ) : null}
       {screen === 'settings' ? (
         <ScrollView contentContainerStyle={styles.settingsContent} keyboardShouldPersistTaps="handled">
           {navigationHeader}
@@ -474,6 +590,8 @@ export default function App() {
             onBaseUrlChange={setBaseUrl}
             onModelIdChange={setModelId}
             onSave={() => void saveProviderSettings()}
+            onSupportsImagesChange={setSupportsImages}
+            supportsImages={supportsImages}
           />
         </ScrollView>
       ) : (
@@ -498,9 +616,7 @@ export default function App() {
                         <Image source={{ uri: attachment.uri }} style={styles.attachmentImage} />
                         <TouchableOpacity
                           accessibilityLabel={i18n.t('removeAttachment', { name: attachment.fileName })}
-                          onPress={() =>
-                            setPendingAttachments((current) => current.filter(({ id }) => id !== attachment.id))
-                          }
+                          onPress={() => removeAttachment(attachment)}
                           style={styles.removeAttachment}>
                           <Text style={styles.removeAttachmentText}>×</Text>
                         </TouchableOpacity>
@@ -509,8 +625,15 @@ export default function App() {
                   </ScrollView>
                 ) : null}
                 {validationError ? <Text style={styles.error}>{validationError}</Text> : null}
+                {retryableMessage && !running ? (
+                  <Button disabled={isOnline !== true} onPress={() => void retry()} title={i18n.t('retry')} />
+                ) : null}
                 <View style={styles.actions}>
-                  <Button disabled={running} onPress={() => void selectImages()} title={i18n.t('addImage')} />
+                  <Button
+                    disabled={!databaseReady || !activeTopicId || running || pendingAttachments.length >= 4}
+                    onPress={() => void selectImages()}
+                    title={i18n.t('addImage')}
+                  />
                   {running ? (
                     <Button color="#b42318" onPress={stop} title={i18n.t('stop')} />
                   ) : (
@@ -580,6 +703,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   label: { color: '#344054', fontSize: 13, fontWeight: '600', marginTop: 4 },
+  offlineBanner: { backgroundColor: '#fffaeb', borderBottomColor: '#fec84b', borderBottomWidth: 1, padding: 12 },
+  offlineText: { color: '#7a2e0e', fontSize: 13 },
+  offlineTitle: { color: '#7a2e0e', fontWeight: '700' },
   prompt: { minHeight: 92 },
   removeAttachment: {
     alignItems: 'center',

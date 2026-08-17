@@ -10,6 +10,7 @@ const messages: MobileAgentMessage[] = [
   {
     role: 'user',
     content: [{ type: 'text', text: '请用 **Markdown** 回复。' }],
+    deliveryStatus: 'pending',
     attachments: [
       {
         fileName: 'photo.jpg',
@@ -90,6 +91,9 @@ describe('mobile conversation persistence', () => {
     saveConversationMessages(messages, 'topic-1', testDatabase.database)
 
     expect(loadConversationMessages('topic-1', testDatabase.database)).toEqual(messages)
+    expect(testDatabase.database.select({ status: messageTable.status }).from(messageTable).get()).toEqual({
+      status: 'pending'
+    })
   })
 
   it('cascades message deletion when a topic is deleted', async () => {

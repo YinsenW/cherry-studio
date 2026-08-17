@@ -125,6 +125,34 @@ export const migrations: Migration[] = [
         updated_at INTEGER NOT NULL
       )`
     ]
+  },
+  {
+    version: 4,
+    statements: [
+      'ALTER TABLE provider ADD COLUMN supports_images INTEGER DEFAULT 0 NOT NULL',
+      `CREATE TABLE message_with_pending (
+        id TEXT PRIMARY KEY NOT NULL,
+        parent_id TEXT,
+        topic_id TEXT NOT NULL REFERENCES topic(id) ON DELETE CASCADE,
+        role TEXT NOT NULL,
+        data TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('success', 'error', 'pending')),
+        sequence INTEGER NOT NULL,
+        model_id TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        deleted_at INTEGER
+      )`,
+      `INSERT INTO message_with_pending (
+        id, parent_id, topic_id, role, data, status, sequence, model_id, created_at, updated_at, deleted_at
+      ) SELECT
+        id, parent_id, topic_id, role, data, status, sequence, model_id, created_at, updated_at, deleted_at
+      FROM message`,
+      'DROP TABLE message',
+      'ALTER TABLE message_with_pending RENAME TO message',
+      'CREATE INDEX message_topic_created_idx ON message (topic_id, created_at)',
+      'CREATE UNIQUE INDEX message_topic_sequence_uniq ON message (topic_id, sequence)'
+    ]
   }
 ]
 

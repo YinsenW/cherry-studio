@@ -33,7 +33,8 @@ describe('mobile provider persistence', () => {
         name: 'OpenAI Compatible',
         apiKey: 'secret-key',
         baseUrl: 'https://example.com/v1',
-        modelId: 'test-model'
+        modelId: 'test-model',
+        supportsImages: true
       },
       testDatabase.database,
       secretStore
@@ -44,7 +45,8 @@ describe('mobile provider persistence', () => {
     await expect(getProvider('openai-compatible', testDatabase.database, secretStore)).resolves.toMatchObject({
       apiKey: 'secret-key',
       baseUrl: 'https://example.com/v1',
-      modelId: 'test-model'
+      modelId: 'test-model',
+      supportsImages: true
     })
   })
 })

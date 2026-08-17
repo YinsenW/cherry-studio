@@ -12,8 +12,8 @@ describe('mobile database migrations', () => {
   it('applies the complete ordered migration array to a fresh database', async () => {
     testDatabase = await createTestDatabase({ setItemAsync: vi.fn() })
 
-    expect(migrations.map(({ version }) => version)).toEqual([1, 2, 3])
-    expect(testDatabase.sqlite.pragma('user_version', { simple: true })).toBe(3)
+    expect(migrations.map(({ version }) => version)).toEqual([1, 2, 3, 4])
+    expect(testDatabase.sqlite.pragma('user_version', { simple: true })).toBe(4)
     expect(
       testDatabase.sqlite
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -63,8 +63,57 @@ describe('mobile database migrations', () => {
     expect(storedSecrets.get(provider.apiKeyRef)).toBe('secret-key')
     expect(columns.map(({ name }) => name)).toContain('api_key_ref')
     expect(columns.map(({ name }) => name)).not.toContain('api_key')
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(3)
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(4)
 
+    sqlite.close()
+  })
+
+  it('preserves existing messages when adding pending delivery status', async () => {
+    const sqlite = new BetterSqlite3(':memory:')
+    const migrationDatabase = createMigrationDatabase(sqlite)
+
+    sqlite.transaction(() => {
+      for (const migration of migrations.slice(0, 3)) {
+        for (const statement of migration.statements) sqlite.exec(statement)
+      }
+      sqlite.pragma('user_version = 3')
+      sqlite
+        .prepare(
+          `INSERT INTO topic (
+            id, name, is_name_manually_edited, assistant_id, order_key,
+            last_activity_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run('topic-1', '', 0, null, 't0', 1, 1, 1)
+      sqlite
+        .prepare(
+          `INSERT INTO message (
+            id, parent_id, topic_id, role, data, status, sequence,
+            model_id, created_at, updated_at, deleted_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          'message-1',
+          null,
+          'topic-1',
+          'user',
+          JSON.stringify({ role: 'user', content: 'keep me', timestamp: 1 }),
+          'success',
+          0,
+          null,
+          1,
+          1,
+          null
+        )
+    })()
+
+    await applyMigrations(migrationDatabase, { setItemAsync: vi.fn() })
+
+    expect(sqlite.prepare('SELECT id, data, status FROM message').get()).toEqual({
+      id: 'message-1',
+      data: JSON.stringify({ role: 'user', content: 'keep me', timestamp: 1 }),
+      status: 'success'
+    })
     sqlite.close()
   })
 })

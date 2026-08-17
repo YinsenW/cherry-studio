@@ -3,7 +3,9 @@ import { asc, eq } from 'drizzle-orm'
 import type { MobileAgentMessage } from '../types/message'
 import { messageTable, type MobileDatabase, topicTable } from './schema'
 
-function getMessageStatus(message: MobileAgentMessage): 'success' | 'error' {
+function getMessageStatus(message: MobileAgentMessage): 'success' | 'error' | 'pending' {
+  if (message.role === 'user' && message.deliveryStatus === 'pending') return 'pending'
+  if (message.role === 'user' && message.deliveryStatus === 'error') return 'error'
   return message.role === 'assistant' && message.stopReason === 'error' ? 'error' : 'success'
 }
 

@@ -1,24 +1,21 @@
 {
   "expo": {
-    "name": "Cherry Studio",
-    "slug": "cherry-studio-mobile",
-    "version": "0.0.1",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
-    "ios": {
-      "supportsTablet": true
-    },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
+        "foregroundImage": "./assets/android-icon-foreground.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false,
-      "package": "ai.cherry.mobile"
+      "package": "ai.cherry.mobile",
+      "predictiveBackGestureEnabled": false
     },
+    "icon": "./assets/icon.png",
+    "ios": {
+      "supportsTablet": true
+    },
+    "name": "Cherry Studio",
+    "orientation": "portrait",
     "plugins": [
       "expo-dev-client",
       [
@@ -33,11 +30,14 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "允许 Cherry Studio 选择要附加到消息的图片。",
           "cameraPermission": false,
-          "microphonePermission": false
+          "microphonePermission": false,
+          "photosPermission": "允许 Cherry Studio 选择要附加到消息的图片。"
         }
       ]
-    ]
+    ],
+    "slug": "cherry-studio-mobile",
+    "userInterfaceStyle": "automatic",
+    "version": "0.0.1"
   }
 }
